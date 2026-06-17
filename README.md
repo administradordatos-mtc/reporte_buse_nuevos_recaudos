@@ -1,30 +1,38 @@
-# Informe seguro Vercel — Recaudo vehículos 10* 2026
+# Recaudo vehículos 10* 2026 — Vercel seguro
 
-## Contenido
+Esta versión evita `middleware.js` y `next/server` para reducir errores de despliegue en Vercel.
 
-- `public/index.html`: informe HTML corporativo La Carolina.
-- `public/recaudo_vehiculos_10_2026_mensual.csv`: CSV complementario.
-- `public/login.html`: pantalla de acceso.
-- `middleware.js`: protege rutas del sitio.
-- `api/login.js`: valida clave contra variable de entorno `ACCESS_KEY`.
+## Estructura
+
+- `index.html`: pantalla pública de acceso.
+- `api/login.js`: valida la clave contra `ACCESS_KEY`.
+- `api/report.js`: entrega el HTML protegido si la cookie es válida.
+- `api/csv.js`: entrega el CSV protegido si la cookie es válida.
 - `api/logout.js`: cierra sesión.
+- `private/report.html`: informe corporativo, no público directamente.
 
-## Clave de acceso
+## Variable obligatoria en Vercel
 
-Configúrala como variable de entorno `ACCESS_KEY` en Vercel. No se debe guardar la clave real en GitHub.
+Configure:
 
-## Despliegue seguro en Vercel
+```text
+ACCESS_KEY=TU_CLAVE_SEGURA
+```
 
-1. Crear un proyecto nuevo en Vercel con esta carpeta como raíz.
-2. En Vercel ir a **Project Settings > Environment Variables**.
-3. Crear variable:
-   - Nombre: `ACCESS_KEY`
-   - Valor: `TU_CLAVE_SEGURA`
-   - Ambientes: Production, Preview y Development si aplica.
-4. Deploy.
-5. Al abrir la URL, Vercel mostrará `/login.html` y solo permitirá entrar con la clave.
+En:
 
-## Seguridad
+```text
+Vercel → Project Settings → Environment Variables
+```
 
-La clave no está embebida en `public/index.html`; se compara del lado servidor contra `process.env.ACCESS_KEY`.
-Para mayor seguridad, mantén el repositorio privado y rota la clave periódicamente.
+Use Production, Preview y Development si aplica.
+
+## Despliegue
+
+1. Suba estos archivos al repositorio GitHub.
+2. En Vercel importe el repositorio.
+3. Framework Preset: `Other`.
+4. Build Command: dejar vacío.
+5. Output Directory: dejar vacío.
+6. Configure `ACCESS_KEY`.
+7. Deploy.

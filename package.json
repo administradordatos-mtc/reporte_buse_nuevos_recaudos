@@ -1,1 +1,1 @@
-{"name":"recaudo-vehiculos-10-2026-seguro","private":true,"version":"1.0.0","scripts":{"dev":"vercel dev","deploy":"vercel --prod"},"devDependencies":{"vercel":"latest"}}
+{"name":"recaudo-vehiculos-10-2026-simple-seguro","private":true,"version":"1.1.0","type":"module","scripts":{"deploy":"vercel --prod"}}
