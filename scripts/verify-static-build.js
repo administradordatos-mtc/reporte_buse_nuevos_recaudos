@@ -4,7 +4,7 @@ import path from 'path';
 const requiredFiles = [
   'index.html',
   'private/report.html',
-  'private/timbradas_flota_2026_detalle.csv',
+  'private/timbradas_flota_2026_resumen.csv',
   'api/login.js',
   'api/logout.js',
   'api/report.js',

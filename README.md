@@ -1,16 +1,16 @@
 # Dashboard timbradas toda la flota 2026 — Vercel seguro
 
-Dashboard interactivo y responsive enfocado en timbradas/TIM R de toda la flota, con KPIs operativos, insights automáticos, filtros por fecha/año/mes/día/vehículo/ruta/clasificación, calendario operativo Ley Emiliani + Carnaval de Barranquilla, rankings y CSV protegido. Esta versión evita `middleware.js` y `next/server` para reducir errores de despliegue en Vercel.
+Dashboard interactivo y responsive enfocado en timbradas recaudadas/TIM de toda la flota, con KPIs operativos, insights automáticos, filtros por fecha/año/mes/día/vehículo/ruta/clasificación, calendario operativo Ley Emiliani + Carnaval de Barranquilla, rankings y CSV protegido. Esta versión evita `middleware.js` y `next/server` para reducir errores de despliegue en Vercel.
 
 ## Estructura
 
 - `index.html`: pantalla pública de acceso.
 - `api/login.js`: valida la clave contra `ACCESS_KEY`.
 - `api/report.js`: entrega el HTML protegido si la cookie es válida.
-- `api/csv.js`: entrega el CSV protegido de detalle de timbradas.
+- `api/csv.js`: entrega el CSV protegido de resumen ejecutivo de timbradas.
 - `api/logout.js`: cierra sesión.
 - `private/report.html`: dashboard corporativo/interactivo, no público directamente.
-- `private/timbradas_flota_2026_detalle.csv`: CSV protegido de detalle operativo de toda la flota.
+- `private/timbradas_flota_2026_resumen.csv`: CSV protegido de resumen ejecutivo agregado de toda la flota.
 - `scripts/generate_timbradas_dashboard.py`: regenerador local desde Supabase usando `.env` no versionado.
 
 ## Variable obligatoria en Vercel
