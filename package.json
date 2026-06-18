@@ -1,1 +1,11 @@
-{"name":"dashboard-timbradas-busetas-10-2026-seguro","private":true,"version":"2.0.0","type":"module","scripts":{"generate":"python3 scripts/generate_timbradas_dashboard.py","deploy":"vercel --prod"}}
+{
+  "name": "dashboard-timbradas-busetas-10-2026-seguro",
+  "private": true,
+  "version": "2.0.1",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/verify-static-build.js",
+    "generate": "python3 scripts/generate_timbradas_dashboard.py",
+    "deploy": "vercel --prod"
+  }
+}
