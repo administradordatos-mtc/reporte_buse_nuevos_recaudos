@@ -350,7 +350,7 @@ def build_data(rows: list[dict], total_count):
     } for r in rows]
 
     return {
-        "meta": {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "source": "Supabase / viajes_recaudados", "filter": "codigo_vehiculo like 10* · Fecha Día 2026", "date_field": "fecha_dia derivada de fecha_viaje", "rows": len(rows), "total_count_header": total_count, "period": f"{daily[0]['fecha']} a {daily[-1]['fecha']}" if daily else "Sin registros"},
+        "meta": {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "source": "Supabase / viajes_recaudados", "filter": "Toda la flota · Fecha Día 2026", "date_field": "fecha_dia derivada de fecha_viaje", "rows": len(rows), "total_count_header": total_count, "period": f"{daily[0]['fecha']} a {daily[-1]['fecha']}" if daily else "Sin registros"},
         "kpis": {"timr": round(overall["timr"], 1), "tim": round(overall["tim"], 1), "descuento": round(overall["descuento"], 1), "tim_gap": round(tim_gap, 1), "viajes": overall["viajes"], "buses": len(overall["vehiculos"]), "rutas": len(overall["rutas"]), "avg_trip": round(avg_trip, 1), "discount_rate": round(discount_rate, 2), "best_day": best_day, "best_month": best_month},
         "monthly": monthly, "daily": daily, "weekday": weekday, "day_types": day_types, "special_days": special_days, "top_bus": top_bus, "top_route": top_route, "top_driver": top_driver, "insights": insights, "rows": compact_rows,
         "filters": {"years": sorted(set(r["anio"] for r in rows)), "months": sorted(set(r["mes"] for r in rows)), "days": sorted(set(r["dia"] for r in rows)), "day_types": [x for x in type_order if x in set(r["tipo_dia"] for r in rows)], "vehicles": sorted(set(r["codigo_vehiculo"] for r in rows)), "routes": sorted(set(r["ruta"] for r in rows))},
@@ -358,7 +358,7 @@ def build_data(rows: list[dict], total_count):
 
 
 def write_csv(data: dict):
-    path = OUT_PRIVATE / "timbradas_vehiculos_10_2026_detalle.csv"
+    path = OUT_PRIVATE / "timbradas_flota_2026_detalle.csv"
     with path.open("w", encoding="utf-8", newline="") as f:
         fields = ["fecha_dia", "fecha_viaje", "anio", "mes", "dia", "dia_semana", "tipo_dia", "motivo_dia", "vehiculo", "placa", "ruta", "conductor", "viaje", "tim", "timr", "descuento", "estado", "novedad", "extemporaneo", "contable"]
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
@@ -376,7 +376,7 @@ def render_html(data: dict) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dashboard timbradas busetas 10* · La Carolina</title>
+<title>Dashboard timbradas toda la flota · La Carolina</title>
 <style>
 :root{{--red:#bf2026;--red2:#7c1116;--gold:#d7b85f;--dark:#151b1e;--ink:#18212a;--muted:#69727d;--bg:#f4f0e7;--card:#fffdf7;--line:#e8dfce;--ok:#16734f;--warn:#a15c00;--blue:#1769aa}}
 *{{box-sizing:border-box}} html{{scroll-behavior:smooth}} body{{margin:0;background:linear-gradient(180deg,#1b1111 0,#f4f0e7 360px);font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;color:var(--ink)}}
@@ -402,10 +402,10 @@ main{{max-width:1480px;margin:-58px auto 70px;padding:0 clamp(12px,3vw,34px)}} .
     <div>
       <div class="brand"><div class="logo">{logo_html}</div><div><strong>La Carolina</strong><div class="subtitle">Transporte con Corazón</div></div></div>
       <span class="eyebrow">Dashboard operativo · Timbradas</span>
-      <h1>Busetas código 10*: validación de pasajeros y eficiencia operativa</h1>
-      <div class="subtitle">Experiencia interactiva enfocada en TIM R, timbradas netas, descuentos, viajes, buses activos, rutas e insights accionables.</div>
+      <h1>Toda la flota: validación de pasajeros y eficiencia operativa</h1>
+      <div class="subtitle">Webapp responsive para analizar TIM R, timbradas netas, descuentos, viajes, flota activa, rutas, calendario operativo e insights accionables.</div>
     </div>
-    <div class="hero-panel"><strong>Fuente:</strong> Supabase / viajes_recaudados<br><strong>Filtro:</strong> código vehículo 10* · Fecha Día 2026<br><strong>Campo fecha:</strong> Fecha Día<br><strong>Periodo:</strong> <span id="periodHero"></span><br><strong>Generado:</strong> {html.escape(data['meta']['generated_at'])}</div>
+    <div class="hero-panel"><strong>Fuente:</strong> Supabase / viajes_recaudados<br><strong>Filtro:</strong> Toda la flota · Fecha Día 2026<br><strong>Campo fecha:</strong> Fecha Día<br><strong>Periodo:</strong> <span id="periodHero"></span><br><strong>Generado:</strong> {html.escape(data['meta']['generated_at'])}</div>
   </div>
 </header>
 <main>
@@ -417,7 +417,7 @@ main{{max-width:1480px;margin:-58px auto 70px;padding:0 clamp(12px,3vw,34px)}} .
     <div><label class="label">Desde</label><input id="fromDate" type="date"></div>
     <div><label class="label">Hasta</label><input id="toDate" type="date"></div>
     <div><label class="label">Clasificación</label><select id="typeFilter"><option value="">Todas</option></select></div>
-    <div><label class="label">Buseta</label><select id="vehicleFilter"><option value="">Todas</option></select></div>
+    <div><label class="label">Vehículo</label><select id="vehicleFilter"><option value="">Todos</option></select></div>
     <div><label class="label">Ruta</label><select id="routeFilter"><option value="">Todas</option></select></div>
     <div><label class="label">Buscar</label><input id="searchBox" placeholder="placa, conductor, viaje, novedad..."></div>
   </section>
@@ -445,7 +445,7 @@ main{{max-width:1480px;margin:-58px auto 70px;padding:0 clamp(12px,3vw,34px)}} .
   </section>
 
   <section class="grid-3">
-    <div class="card"><h2>Top busetas por TIM R</h2><div id="rankBus" class="rank"></div></div>
+    <div class="card"><h2>Top vehículos por TIM R</h2><div id="rankBus" class="rank"></div></div>
     <div class="card"><h2>Top rutas por TIM R</h2><div id="rankRoute" class="rank"></div></div>
     <div class="card"><h2>Top conductores por TIM R</h2><div id="rankDriver" class="rank"></div></div>
   </section>
@@ -457,7 +457,7 @@ main{{max-width:1480px;margin:-58px auto 70px;padding:0 clamp(12px,3vw,34px)}} .
 
   <section class="card">
     <div class="section-title"><div><h2>Detalle de viajes</h2><div class="small">Tabla interactiva con los primeros 300 registros visibles según filtros.</div></div></div>
-    <div class="table-wrap"><table><thead><tr><th>Fecha Día</th><th>Día</th><th>Tipo</th><th>Motivo</th><th>Buseta</th><th>Placa</th><th>Ruta</th><th>Conductor</th><th>Viaje</th><th class="right">TIM</th><th class="right">TIM R</th><th class="right">Desc.</th><th>Estado</th></tr></thead><tbody id="detailBody"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Fecha Día</th><th>Día</th><th>Tipo</th><th>Motivo</th><th>Vehículo</th><th>Placa</th><th>Ruta</th><th>Conductor</th><th>Viaje</th><th class="right">TIM</th><th class="right">TIM R</th><th class="right">Desc.</th><th>Estado</th></tr></thead><tbody id="detailBody"></tbody></table></div>
   </section>
 </main>
 <footer>La Carolina · Transporte con Corazón · Dashboard protegido en Vercel · Sin valores monetarios</footer>
@@ -474,8 +474,8 @@ function opts(id, vals, labels={{}}){{const el=$(id); vals.forEach(v=>{{const o=
 opts('yearFilter', DATA.filters.years); opts('monthFilter', DATA.filters.months, Object.fromEntries(DATA.monthly.map(m=>[m.mes,m.label]))); opts('dayFilter', DATA.filters.days); opts('typeFilter', DATA.filters.day_types); opts('vehicleFilter', DATA.filters.vehicles); opts('routeFilter', DATA.filters.routes);
 function filteredRows(){{const y=$('yearFilter').value,m=$('monthFilter').value,d=$('dayFilter').value,fd=$('fromDate').value,td=$('toDate').value,tp=$('typeFilter').value,v=$('vehicleFilter').value,rt=$('routeFilter').value,q=$('searchBox').value.trim().toLowerCase(); return DATA.rows.filter(r=>(!y||r.anio===y)&&(!m||r.mes===m)&&(!d||r.dia===d)&&(!fd||r.fecha>=fd)&&(!td||r.fecha<=td)&&(!tp||r.tipo_dia===tp)&&(!v||r.vehiculo===v)&&(!rt||r.ruta===rt)&&(!q||[r.fecha,r.anio,r.mes,r.dia,r.dia_semana,r.tipo_dia,r.motivo_dia,r.vehiculo,r.placa,r.ruta,r.conductor,r.viaje,r.estado,r.novedad].join(' ').toLowerCase().includes(q)))}}
 function kpi(label,value,hint){{return `<div class="kpi"><div class="label">${{label}}</div><div class="value">${{value}}</div><div class="hint">${{hint||''}}</div></div>`}}
-function renderKPIs(rows){{const a=agg(rows); const dias=new Set(rows.map(r=>r.fecha)).size; $('kpis').innerHTML=[kpi('TIM R total',nf.format(a.timr),'Timbradas reales / validaciones control'),kpi('Timbradas netas',nf.format(a.tim),'Registro neto operativo'),kpi('Descuentos',nf.format(a.des),`${{nfd.format(a.discRate)}}% sobre TIM R`),kpi('Viajes',nf.format(a.viajes),`${{nfd.format(a.avg)}} TIM R por viaje`),kpi('Días filtrados',nf.format(dias),'Fecha Día operativa'),kpi('Clasificaciones',nf.format(new Set(rows.map(r=>r.tipo_dia)).size),'Hábil, sábado, dominical, festivo, carnaval')].join('')}}
-function renderInsights(rows){{const a=agg(rows); const byDay=[...group(rows,r=>r.fecha)].map(([k,rs])=>({{fecha:k,tipo:rs[0]?.tipo_dia||'',motivo:rs[0]?.motivo_dia||'',timr:sum(rs,'timr'),viajes:rs.length}})).sort((x,y)=>y.timr-x.timr); const byType=[...group(rows,r=>r.tipo_dia)].map(([k,rs])=>({{k,timr:sum(rs,'timr'),dias:new Set(rs.map(r=>r.fecha)).size}})).sort((x,y)=>y.timr-x.timr); const byBus=[...group(rows,r=>r.vehiculo+' · '+r.placa)].map(([k,rs])=>({{k,timr:sum(rs,'timr')}})).sort((x,y)=>y.timr-x.timr); const byRoute=[...group(rows,r=>r.ruta)].map(([k,rs])=>({{k,timr:sum(rs,'timr')}})).sort((x,y)=>y.timr-x.timr); const top3=byBus.slice(0,3).reduce((s,x)=>s+x.timr,0); const conc=a.timr?top3/a.timr*100:0; const list=[`<b>Mayor Fecha Día:</b> ${{byDay[0]?.fecha||'Sin datos'}} (${{byDay[0]?.tipo||'Sin clasificar'}}) con ${{nf.format(byDay[0]?.timr||0)}} TIM R.`, `<b>Clasificación dominante:</b> ${{byType[0]?.k||'Sin datos'}} con ${{nf.format(byType[0]?.timr||0)}} TIM R en ${{nf.format(byType[0]?.dias||0)}} días.`, `<b>Buseta líder:</b> ${{byBus[0]?.k||'Sin datos'}} con ${{nf.format(byBus[0]?.timr||0)}} TIM R.`, `<b>Ruta principal:</b> ${{byRoute[0]?.k||'Sin datos'}} concentra ${{nf.format(byRoute[0]?.timr||0)}} TIM R.`, `<b>Concentración:</b> top 3 busetas aportan ${{nfd.format(conc)}}% de la TIM R visible.`, `<b>Productividad:</b> ${{nfd.format(a.avg)}} TIM R por viaje en el filtro actual.`]; $('insights').innerHTML=list.map(x=>`<div class="insight">${{x}}</div>`).join('')}}
+function renderKPIs(rows){{const a=agg(rows); const dias=new Set(rows.map(r=>r.fecha)).size; const byVeh=[...group(rows,r=>r.vehiculo)].map(([k,rs])=>({{k,timr:sum(rs,'timr')}})).sort((x,y)=>y.timr-x.timr); const topShare=a.timr&&byVeh[0]?byVeh[0].timr/a.timr*100:0; $('kpis').innerHTML=[kpi('TIM R total',nf.format(a.timr),'Timbradas reales / validaciones control'),kpi('Viajes',nf.format(a.viajes),`${{nfd.format(a.avg)}} TIM R por viaje`),kpi('Flota activa',nf.format(a.buses),'Vehículos con operación en el filtro'),kpi('Rutas activas',nf.format(a.rutas),'Cobertura operacional visible'),kpi('Días operados',nf.format(dias),'Fecha Día operativa'),kpi('Descuentos',nf.format(a.des),`${{nfd.format(a.discRate)}}% sobre TIM R`),kpi('Top vehículo',byVeh[0]?.k||'Sin datos',`${{nfd.format(topShare)}}% de TIM R visible`),kpi('Clasificaciones',nf.format(new Set(rows.map(r=>r.tipo_dia)).size),'Hábil, sábado, dominical, festivo, carnaval')].join('')}}
+function renderInsights(rows){{const a=agg(rows); const byDay=[...group(rows,r=>r.fecha)].map(([k,rs])=>({{fecha:k,tipo:rs[0]?.tipo_dia||'',motivo:rs[0]?.motivo_dia||'',timr:sum(rs,'timr'),viajes:rs.length}})).sort((x,y)=>y.timr-x.timr); const byType=[...group(rows,r=>r.tipo_dia)].map(([k,rs])=>({{k,timr:sum(rs,'timr'),dias:new Set(rs.map(r=>r.fecha)).size}})).sort((x,y)=>y.timr-x.timr); const byBus=[...group(rows,r=>r.vehiculo+' · '+r.placa)].map(([k,rs])=>({{k,timr:sum(rs,'timr'),viajes:rs.length,avg:sum(rs,'timr')/rs.length}})).sort((x,y)=>y.timr-x.timr); const productive=byBus.filter(x=>x.viajes>=3).sort((x,y)=>y.avg-x.avg); const byRoute=[...group(rows,r=>r.ruta)].map(([k,rs])=>({{k,timr:sum(rs,'timr'),viajes:rs.length}})).sort((x,y)=>y.timr-x.timr); const top3=byBus.slice(0,3).reduce((s,x)=>s+x.timr,0); const conc=a.timr?top3/a.timr*100:0; const list=[`<b>Mayor Fecha Día:</b> ${{byDay[0]?.fecha||'Sin datos'}} (${{byDay[0]?.tipo||'Sin clasificar'}}) con ${{nf.format(byDay[0]?.timr||0)}} TIM R.`, `<b>Clasificación dominante:</b> ${{byType[0]?.k||'Sin datos'}} con ${{nf.format(byType[0]?.timr||0)}} TIM R en ${{nf.format(byType[0]?.dias||0)}} días.`, `<b>Vehículo líder:</b> ${{byBus[0]?.k||'Sin datos'}} con ${{nf.format(byBus[0]?.timr||0)}} TIM R en ${{nf.format(byBus[0]?.viajes||0)}} viajes.`, `<b>Mayor productividad:</b> ${{productive[0]?.k||'Sin datos'}} con ${{nfd.format(productive[0]?.avg||0)}} TIM R/viaje (mín. 3 viajes).`, `<b>Ruta principal:</b> ${{byRoute[0]?.k||'Sin datos'}} concentra ${{nf.format(byRoute[0]?.timr||0)}} TIM R en ${{nf.format(byRoute[0]?.viajes||0)}} viajes.`, `<b>Concentración flota:</b> top 3 vehículos aportan ${{nfd.format(conc)}}% de la TIM R visible.`, `<b>Cobertura:</b> ${{nf.format(a.buses)}} vehículos y ${{nf.format(a.rutas)}} rutas activas en el filtro actual.`, `<b>Productividad general:</b> ${{nfd.format(a.avg)}} TIM R por viaje.`]; $('insights').innerHTML=list.map(x=>`<div class="insight">${{x}}</div>`).join('')}}
 function drawBars(canvasId, items, labelKey, valueKey, color='#bf2026'){{const c=$(canvasId),ctx=c.getContext('2d'),dpr=window.devicePixelRatio||1; const W=c.clientWidth*dpr,H=c.clientHeight*dpr; c.width=W;c.height=H;ctx.scale(dpr,dpr); const w=c.clientWidth,h=c.clientHeight; ctx.clearRect(0,0,w,h); ctx.font='12px Arial'; ctx.fillStyle='#69727d'; const pad=42; const max=Math.max(...items.map(x=>x[valueKey]),1); const bw=Math.max(8,(w-pad*2)/Math.max(items.length,1)*.72); items.forEach((it,i)=>{{const x=pad+i*((w-pad*2)/items.length)+((w-pad*2)/items.length-bw)/2; const bh=(h-pad*2)*(it[valueKey]/max); const y0=h-pad-bh; const grad=ctx.createLinearGradient(0,y0,0,h-pad); grad.addColorStop(0,it.color||color); grad.addColorStop(1,'#d7b85f'); ctx.fillStyle=grad; ctx.fillRect(x,y0,bw,bh); ctx.fillStyle='#20262d'; ctx.font='bold 11px Arial'; ctx.textAlign='center'; if(items.length<26)ctx.fillText(nf.format(it[valueKey]),x+bw/2,Math.max(30,y0-5)); if(items.length<18){{ctx.save();ctx.translate(x+bw/2,h-12);ctx.rotate(-0.75);ctx.fillStyle='#4b5563';ctx.textAlign='right';ctx.fillText(String(it[labelKey]).slice(5)||it[labelKey],0,0);ctx.restore()}} }}); ctx.fillStyle='#20262d'; ctx.font='bold 13px Arial'; ctx.textAlign='left'; ctx.fillText('Timbradas reales (TIM R)',pad,18); }}
 function rankHtml(items){{const max=Math.max(...items.map(x=>x.timr),1); return items.slice(0,12).map(x=>`<div class="rank-row"><div><b>${{x.label||x.k||x.key}}</b><div class="bar"><span style="width:${{Math.max(3,x.timr/max*100)}}%"></span></div><div class="small">${{nf.format(x.viajes||0)}} viajes · ${{nfd.format(x.avg||0)}} TIM R/viaje</div></div><div class="right"><b>${{nf.format(x.timr)}}</b><div class="small">TIM R</div></div></div>`).join('')}}
 function topFrom(rows,key,label){{return [...group(rows,key)].map(([k,rs])=>{{const a=agg(rs); return {{label:label(k,rs),timr:a.timr,viajes:a.viajes,avg:a.avg}}}}).sort((a,b)=>b.timr-a.timr)}}
@@ -493,7 +493,6 @@ function resetFilters(){{['yearFilter','monthFilter','dayFilter','fromDate','toD
 def main():
     rows, total = supabase_get("viajes_recaudados", [
         ("select", SELECT),
-        ("codigo_vehiculo", "like.10*"),
         ("fecha_viaje", "gte.2026-01-01"),
         ("fecha_viaje", "lt.2027-01-01"),
         ("order", "fecha_viaje.asc,codigo_vehiculo.asc"),

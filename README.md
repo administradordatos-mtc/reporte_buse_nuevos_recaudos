@@ -1,6 +1,6 @@
-# Dashboard timbradas busetas 10* 2026 — Vercel seguro
+# Dashboard timbradas toda la flota 2026 — Vercel seguro
 
-Dashboard interactivo y responsive enfocado en timbradas/TIM R de busetas código 10*, con KPIs operativos, insights, filtros por mes/buseta/ruta, rankings y CSV protegido. Esta versión evita `middleware.js` y `next/server` para reducir errores de despliegue en Vercel.
+Dashboard interactivo y responsive enfocado en timbradas/TIM R de toda la flota, con KPIs operativos, insights automáticos, filtros por fecha/año/mes/día/vehículo/ruta/clasificación, calendario operativo Ley Emiliani + Carnaval de Barranquilla, rankings y CSV protegido. Esta versión evita `middleware.js` y `next/server` para reducir errores de despliegue en Vercel.
 
 ## Estructura
 
@@ -10,7 +10,7 @@ Dashboard interactivo y responsive enfocado en timbradas/TIM R de busetas códig
 - `api/csv.js`: entrega el CSV protegido de detalle de timbradas.
 - `api/logout.js`: cierra sesión.
 - `private/report.html`: dashboard corporativo/interactivo, no público directamente.
-- `private/timbradas_vehiculos_10_2026_detalle.csv`: CSV protegido de detalle operativo.
+- `private/timbradas_flota_2026_detalle.csv`: CSV protegido de detalle operativo de toda la flota.
 - `scripts/generate_timbradas_dashboard.py`: regenerador local desde Supabase usando `.env` no versionado.
 
 ## Variable obligatoria en Vercel
@@ -48,7 +48,7 @@ Debe responder `"access_key": "configured"`. Si responde `"missing"`, la variabl
 1. Suba estos archivos al repositorio GitHub.
 2. En Vercel importe el repositorio.
 3. Framework Preset: `Other`.
-4. Build Command: dejar vacío.
-5. Output Directory: dejar vacío.
+4. Build Command: `npm run build`.
+5. Output Directory: `.` mediante `vercel.json`.
 6. Configure `ACCESS_KEY`.
 7. Deploy.

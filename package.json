@@ -1,7 +1,7 @@
 {
-  "name": "dashboard-timbradas-busetas-10-2026-seguro",
+  "name": "dashboard-timbradas-flota-2026-seguro",
   "private": true,
-  "version": "2.0.1",
+  "version": "2.1.0",
   "type": "module",
   "scripts": {
     "build": "node scripts/verify-static-build.js",
