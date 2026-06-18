@@ -10,7 +10,7 @@ import ssl
 import urllib.parse
 import urllib.request
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -129,6 +129,88 @@ def fecha_dia_of(r: dict) -> str:
     return normalize_date(r.get("fecha_dia") or r.get("fecha día") or r.get("fecha_dia_operativa") or r.get("fecha_viaje"))
 
 
+def easter_date(year: int) -> date:
+    """Computus gregoriano."""
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return date(year, month, day)
+
+
+def next_monday(d: date) -> date:
+    return d + timedelta(days=(7 - d.weekday()) % 7)
+
+
+def colombia_special_days(year: int) -> dict[date, str]:
+    """Festivos colombianos, Ley Emiliani y Carnaval de Barranquilla."""
+    days: dict[date, str] = {}
+    fixed = {
+        date(year, 1, 1): "Año Nuevo",
+        date(year, 5, 1): "Día del Trabajo",
+        date(year, 7, 20): "Independencia de Colombia",
+        date(year, 8, 7): "Batalla de Boyacá",
+        date(year, 12, 8): "Inmaculada Concepción",
+        date(year, 12, 25): "Navidad",
+    }
+    days.update(fixed)
+
+    emiliani = [
+        (date(year, 1, 6), "Reyes Magos (Ley Emiliani)"),
+        (date(year, 3, 19), "San José (Ley Emiliani)"),
+        (date(year, 6, 29), "San Pedro y San Pablo (Ley Emiliani)"),
+        (date(year, 8, 15), "Asunción de la Virgen (Ley Emiliani)"),
+        (date(year, 10, 12), "Día de la Raza (Ley Emiliani)"),
+        (date(year, 11, 1), "Todos los Santos (Ley Emiliani)"),
+        (date(year, 11, 11), "Independencia de Cartagena (Ley Emiliani)"),
+    ]
+    for original, name in emiliani:
+        days[next_monday(original)] = name
+
+    easter = easter_date(year)
+    relative = {
+        easter - timedelta(days=3): "Jueves Santo",
+        easter - timedelta(days=2): "Viernes Santo",
+        next_monday(easter + timedelta(days=39)): "Ascensión del Señor (Ley Emiliani)",
+        next_monday(easter + timedelta(days=60)): "Corpus Christi (Ley Emiliani)",
+        next_monday(easter + timedelta(days=68)): "Sagrado Corazón (Ley Emiliani)",
+    }
+    days.update(relative)
+
+    # Carnaval de Barranquilla: sábado a martes antes del Miércoles de Ceniza.
+    for i, label in enumerate(["Sábado de Carnaval", "Domingo de Carnaval", "Lunes de Carnaval", "Martes de Carnaval"]):
+        days[easter - timedelta(days=50 - i)] = label
+    return days
+
+
+def classify_fecha_dia(iso: str) -> tuple[str, str]:
+    try:
+        d = datetime.fromisoformat(iso).date()
+    except Exception:
+        return "Sin fecha", "Fecha no disponible"
+    special = colombia_special_days(d.year)
+    reason = special.get(d, "")
+    if "Carnaval" in reason:
+        return "Carnaval", reason
+    if reason:
+        return "Festivo", reason
+    if d.weekday() == 6:
+        return "Dominical", "Domingo"
+    if d.weekday() == 5:
+        return "Sábado", "Sábado"
+    return "Hábil", "Día hábil según calendario Colombia/Ley Emiliani"
+
+
 def weekday_name(iso: str) -> str:
     names = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     try:
@@ -197,22 +279,30 @@ def build_data(rows: list[dict], total_count):
         r["timr"] = round(fnum(r.get("timbradas_real")), 1)
         r["descuento_num"] = round(fnum(r.get("descuento")), 1)
         r["mes"] = r["fecha_dia"][:7] if len(r["fecha_dia"]) >= 7 else "Sin fecha"
+        r["anio"] = r["fecha_dia"][:4] if len(r["fecha_dia"]) >= 4 else "Sin fecha"
+        r["dia"] = r["fecha_dia"][8:10] if len(r["fecha_dia"]) >= 10 else "Sin fecha"
         r["dia_semana"] = weekday_name(r["fecha_dia"])
+        r["tipo_dia"], r["motivo_dia"] = classify_fecha_dia(r["fecha_dia"])
 
     overall = bucket()
     by_day = defaultdict(bucket)
     by_month = defaultdict(bucket)
     by_weekday = defaultdict(bucket)
+    by_type = defaultdict(bucket)
     for r in rows:
         add(overall, r)
         add(by_day[r["fecha_dia"]], r)
         add(by_month[r["mes"]], r)
         add(by_weekday[r["dia_semana"]], r)
+        add(by_type[r["tipo_dia"]], r)
 
     daily = []
     for k in sorted(by_day):
         b = by_day[k]
-        daily.append({"fecha": k, "dia": weekday_name(k), "viajes": b["viajes"], "tim": round(b["tim"], 1), "timr": round(b["timr"], 1), "descuento": round(b["descuento"], 1), "promedio": round(b["timr"] / b["viajes"], 1) if b["viajes"] else 0, "buses": len(b["vehiculos"]), "rutas": len(b["rutas"])})
+        day_rows = [r for r in rows if r["fecha_dia"] == k]
+        tipo = day_rows[0]["tipo_dia"] if day_rows else "Sin fecha"
+        motivo = day_rows[0]["motivo_dia"] if day_rows else "Fecha no disponible"
+        daily.append({"fecha": k, "dia": weekday_name(k), "tipo_dia": tipo, "motivo_dia": motivo, "viajes": b["viajes"], "tim": round(b["tim"], 1), "timr": round(b["timr"], 1), "descuento": round(b["descuento"], 1), "promedio": round(b["timr"] / b["viajes"], 1) if b["viajes"] else 0, "buses": len(b["vehiculos"]), "rutas": len(b["rutas"])})
     monthly = []
     for k in sorted(by_month):
         b = by_month[k]
@@ -223,6 +313,14 @@ def build_data(rows: list[dict], total_count):
         b = by_weekday.get(k, bucket())
         if b["viajes"]:
             weekday.append({"dia": k, "viajes": b["viajes"], "timr": round(b["timr"], 1), "promedio": round(b["timr"] / b["viajes"], 1)})
+    type_order = ["Hábil", "Sábado", "Dominical", "Festivo", "Carnaval", "Sin fecha"]
+    day_types = []
+    for k in type_order:
+        b = by_type.get(k, bucket())
+        if b["viajes"]:
+            day_count = len({r["fecha_dia"] for r in rows if r["tipo_dia"] == k})
+            day_types.append({"tipo": k, "dias": day_count, "viajes": b["viajes"], "tim": round(b["tim"], 1), "timr": round(b["timr"], 1), "descuento": round(b["descuento"], 1), "promedio_dia": round(b["timr"] / day_count, 1) if day_count else 0, "promedio_viaje": round(b["timr"] / b["viajes"], 1) if b["viajes"] else 0})
+    special_days = [d for d in daily if d["tipo_dia"] in {"Festivo", "Carnaval", "Dominical", "Sábado"}]
 
     top_bus = top_items(rows, lambda r: r["codigo_vehiculo"], lambda r: f"{r['codigo_vehiculo']} · {r['placa']}", 15)
     top_route = top_items(rows, lambda r: r["ruta"], lambda r: r["ruta"], 12)
@@ -237,7 +335,7 @@ def build_data(rows: list[dict], total_count):
 
     insights = [
         f"El periodo concentra {fmt_int(overall['timr'])} timbradas reales (TIM R) en {fmt_int(overall['viajes'])} viajes, con {fmt_dec(avg_trip, 1)} TIM R por viaje.",
-        f"El mejor día operativo fue {best_day.get('fecha')} con {fmt_int(best_day.get('timr', 0))} TIM R.",
+        f"El mejor día operativo fue {best_day.get('fecha')} ({best_day.get('tipo_dia', 'Sin clasificar')}) con {fmt_int(best_day.get('timr', 0))} TIM R.",
         f"El mes con mayor validación fue {best_month.get('label')} con {fmt_int(best_month.get('timr', 0))} TIM R.",
         f"Las 3 busetas líderes aportan {pct(concentration)} de la TIM R total; útil para monitorear concentración operativa.",
         f"La diferencia TIM R vs timbradas registradas es {fmt_int(tim_gap)}; úsela como alerta para revisar descuentos, transbordos o ajustes de validación.",
@@ -245,7 +343,7 @@ def build_data(rows: list[dict], total_count):
     ]
 
     compact_rows = [{
-        "fecha": r["fecha_dia"], "fecha_dia": r["fecha_dia"], "fecha_viaje": r["fecha_viaje"], "mes": r["mes"], "vehiculo": r["codigo_vehiculo"], "placa": r["placa"],
+        "fecha": r["fecha_dia"], "fecha_dia": r["fecha_dia"], "fecha_viaje": r["fecha_viaje"], "anio": r["anio"], "mes": r["mes"], "dia": r["dia"], "dia_semana": r["dia_semana"], "tipo_dia": r["tipo_dia"], "motivo_dia": r["motivo_dia"], "vehiculo": r["codigo_vehiculo"], "placa": r["placa"],
         "ruta": r["ruta"], "conductor": r["conductor_nombre"], "viaje": r.get("viaje") or "", "tim": r["tim"],
         "timr": r["timr"], "descuento": r["descuento_num"], "estado": r.get("estado") or "", "novedad": r.get("novedad") or "",
         "extemporaneo": bool(r.get("is_extemporaneo")), "contable": r.get("is_viaje_contable") is not False,
@@ -254,15 +352,15 @@ def build_data(rows: list[dict], total_count):
     return {
         "meta": {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "source": "Supabase / viajes_recaudados", "filter": "codigo_vehiculo like 10* · Fecha Día 2026", "date_field": "fecha_dia derivada de fecha_viaje", "rows": len(rows), "total_count_header": total_count, "period": f"{daily[0]['fecha']} a {daily[-1]['fecha']}" if daily else "Sin registros"},
         "kpis": {"timr": round(overall["timr"], 1), "tim": round(overall["tim"], 1), "descuento": round(overall["descuento"], 1), "tim_gap": round(tim_gap, 1), "viajes": overall["viajes"], "buses": len(overall["vehiculos"]), "rutas": len(overall["rutas"]), "avg_trip": round(avg_trip, 1), "discount_rate": round(discount_rate, 2), "best_day": best_day, "best_month": best_month},
-        "monthly": monthly, "daily": daily, "weekday": weekday, "top_bus": top_bus, "top_route": top_route, "top_driver": top_driver, "insights": insights, "rows": compact_rows,
-        "filters": {"months": sorted(set(r["mes"] for r in rows)), "vehicles": sorted(set(r["codigo_vehiculo"] for r in rows)), "routes": sorted(set(r["ruta"] for r in rows))},
+        "monthly": monthly, "daily": daily, "weekday": weekday, "day_types": day_types, "special_days": special_days, "top_bus": top_bus, "top_route": top_route, "top_driver": top_driver, "insights": insights, "rows": compact_rows,
+        "filters": {"years": sorted(set(r["anio"] for r in rows)), "months": sorted(set(r["mes"] for r in rows)), "days": sorted(set(r["dia"] for r in rows)), "day_types": [x for x in type_order if x in set(r["tipo_dia"] for r in rows)], "vehicles": sorted(set(r["codigo_vehiculo"] for r in rows)), "routes": sorted(set(r["ruta"] for r in rows))},
     }
 
 
 def write_csv(data: dict):
     path = OUT_PRIVATE / "timbradas_vehiculos_10_2026_detalle.csv"
     with path.open("w", encoding="utf-8", newline="") as f:
-        fields = ["fecha_dia", "fecha_viaje", "mes", "vehiculo", "placa", "ruta", "conductor", "viaje", "tim", "timr", "descuento", "estado", "novedad", "extemporaneo", "contable"]
+        fields = ["fecha_dia", "fecha_viaje", "anio", "mes", "dia", "dia_semana", "tipo_dia", "motivo_dia", "vehiculo", "placa", "ruta", "conductor", "viaje", "tim", "timr", "descuento", "estado", "novedad", "extemporaneo", "contable"]
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
         w.writerows(data["rows"])
@@ -288,7 +386,7 @@ def render_html(data: dict) -> str:
 h1{{font-size:clamp(28px,5vw,56px);line-height:1.02;margin:14px 0 10px;max-width:1050px}} .subtitle{{color:#ffeab0;font-size:clamp(15px,2vw,20px);font-weight:650;max-width:980px}} .hero-grid{{display:grid;grid-template-columns:1.4fr .8fr;gap:26px;align-items:end}} .hero-panel{{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:24px;padding:18px;backdrop-filter:blur(10px)}} .hero-panel strong{{color:#fff5c7}}
 main{{max-width:1480px;margin:-58px auto 70px;padding:0 clamp(12px,3vw,34px)}} .kpis{{display:grid;grid-template-columns:repeat(6,minmax(160px,1fr));gap:14px}} .kpi{{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 18px 40px rgba(21,27,30,.13);position:relative;overflow:hidden}} .kpi:before{{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:linear-gradient(90deg,var(--gold),var(--red))}} .label{{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:850}} .value{{font-size:clamp(24px,3vw,36px);font-weight:950;margin-top:8px;color:var(--dark)}} .hint{{font-size:12px;color:var(--muted);margin-top:7px;line-height:1.35}}
 .card{{background:rgba(255,253,247,.96);border:1px solid var(--line);border-radius:24px;margin-top:18px;padding:20px;box-shadow:0 10px 26px rgba(21,27,30,.08)}} .section-title{{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px}} h2,h3{{margin:0;color:var(--dark)}} .small{{font-size:13px;color:var(--muted)}}
-.filters{{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:12px;position:sticky;top:0;z-index:8;background:rgba(244,240,231,.88);backdrop-filter:blur(12px);padding:12px;border:1px solid var(--line);border-radius:22px;margin-top:18px}} select,input{{width:100%;border:1px solid #d9cfbd;border-radius:15px;background:white;padding:12px 13px;font:inherit;color:var(--ink)}} .actions{{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}} button,.btn{{border:0;border-radius:14px;padding:11px 14px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:8px}} .primary{{background:linear-gradient(135deg,var(--gold),#fff0a8);color:#241a00}} .secondary{{background:#231f20;color:white}}
+.filters{{display:grid;grid-template-columns:repeat(8,minmax(130px,1fr));gap:12px;position:sticky;top:0;z-index:8;background:rgba(244,240,231,.88);backdrop-filter:blur(12px);padding:12px;border:1px solid var(--line);border-radius:22px;margin-top:18px}} select,input{{width:100%;border:1px solid #d9cfbd;border-radius:15px;background:white;padding:12px 13px;font:inherit;color:var(--ink)}} .actions{{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}} button,.btn{{border:0;border-radius:14px;padding:11px 14px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:8px}} .primary{{background:linear-gradient(135deg,var(--gold),#fff0a8);color:#241a00}} .secondary{{background:#231f20;color:white}}
 .grid-2{{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}} .grid-3{{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}} canvas{{width:100%;height:310px;border-radius:18px;background:linear-gradient(180deg,#fff,#fffaf0);border:1px solid #efe4cf}} .legend{{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;color:var(--muted);font-size:13px}} .dot{{width:12px;height:12px;border-radius:50%;display:inline-block;background:var(--red)}} .dot.gold{{background:var(--gold)}} .dot.blue{{background:var(--blue)}}
 .insights{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}} .insight{{background:linear-gradient(180deg,#fff9e8,#fff);border:1px solid #ead9ac;border-radius:18px;padding:15px;line-height:1.42}} .insight b{{color:var(--red2)}}
 .table-wrap{{overflow:auto;border:1px solid var(--line);border-radius:18px;background:white}} table{{width:100%;border-collapse:collapse;min-width:980px}} th{{position:sticky;top:0;background:#20262d;color:#fff;text-align:left;padding:11px 12px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;z-index:1}} td{{border-bottom:1px solid #eee4d2;padding:10px 12px;vertical-align:top}} tr:hover td{{background:#fff8dc}} .right{{text-align:right;white-space:nowrap}} .badge{{display:inline-flex;border-radius:999px;padding:4px 9px;background:#f2e7c7;color:#5f4500;font-weight:850;font-size:12px}} .badge.ok{{background:#dff5ec;color:#0d5f3d}} .badge.warn{{background:#fff0d2;color:#8a4a00}}
@@ -313,7 +411,12 @@ main{{max-width:1480px;margin:-58px auto 70px;padding:0 clamp(12px,3vw,34px)}} .
 <main>
   <section class="kpis" id="kpis"></section>
   <section class="filters" aria-label="Filtros interactivos">
+    <div><label class="label">Año</label><select id="yearFilter"><option value="">Todos</option></select></div>
     <div><label class="label">Mes</label><select id="monthFilter"><option value="">Todos</option></select></div>
+    <div><label class="label">Día</label><select id="dayFilter"><option value="">Todos</option></select></div>
+    <div><label class="label">Desde</label><input id="fromDate" type="date"></div>
+    <div><label class="label">Hasta</label><input id="toDate" type="date"></div>
+    <div><label class="label">Clasificación</label><select id="typeFilter"><option value="">Todas</option></select></div>
     <div><label class="label">Buseta</label><select id="vehicleFilter"><option value="">Todas</option></select></div>
     <div><label class="label">Ruta</label><select id="routeFilter"><option value="">Todas</option></select></div>
     <div><label class="label">Buscar</label><input id="searchBox" placeholder="placa, conductor, viaje, novedad..."></div>
@@ -323,6 +426,17 @@ main{{max-width:1480px;margin:-58px auto 70px;padding:0 clamp(12px,3vw,34px)}} .
   <section class="card">
     <div class="section-title"><div><h2>Insights operativos</h2><div class="small">Lecturas automáticas de la base consultada, recalculadas con los filtros.</div></div></div>
     <div class="insights" id="insights"></div>
+  </section>
+
+  <section class="grid-2">
+    <div class="card">
+      <div class="section-title"><div><h2>Clasificación calendario</h2><div class="small">Hábiles, sábados, dominicales, festivos Ley Emiliani y Carnaval de Barranquilla.</div></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Clasificación</th><th class="right">Días</th><th class="right">Viajes</th><th class="right">TIM R</th><th class="right">TIM</th><th class="right">Desc.</th><th class="right">TIM R / día</th><th class="right">TIM R / viaje</th></tr></thead><tbody id="typeBody"></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="section-title"><div><h2>Calendario especial detectado</h2><div class="small">Días no hábiles o especiales presentes en el filtro.</div></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Fecha Día</th><th>Día</th><th>Tipo</th><th>Motivo</th><th class="right">TIM R</th></tr></thead><tbody id="specialBody"></tbody></table></div>
+    </div>
   </section>
 
   <section class="grid-2">
@@ -343,7 +457,7 @@ main{{max-width:1480px;margin:-58px auto 70px;padding:0 clamp(12px,3vw,34px)}} .
 
   <section class="card">
     <div class="section-title"><div><h2>Detalle de viajes</h2><div class="small">Tabla interactiva con los primeros 300 registros visibles según filtros.</div></div></div>
-    <div class="table-wrap"><table><thead><tr><th>Fecha Día</th><th>Buseta</th><th>Placa</th><th>Ruta</th><th>Conductor</th><th>Viaje</th><th class="right">TIM</th><th class="right">TIM R</th><th class="right">Desc.</th><th>Estado</th></tr></thead><tbody id="detailBody"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Fecha Día</th><th>Día</th><th>Tipo</th><th>Motivo</th><th>Buseta</th><th>Placa</th><th>Ruta</th><th>Conductor</th><th>Viaje</th><th class="right">TIM</th><th class="right">TIM R</th><th class="right">Desc.</th><th>Estado</th></tr></thead><tbody id="detailBody"></tbody></table></div>
   </section>
 </main>
 <footer>La Carolina · Transporte con Corazón · Dashboard protegido en Vercel · Sin valores monetarios</footer>
@@ -357,19 +471,20 @@ function sum(rows, field){{return rows.reduce((a,r)=>a+(Number(r[field])||0),0)}
 function group(rows, keyFn){{const m=new Map(); for(const r of rows){{const k=keyFn(r); if(!m.has(k)) m.set(k,[]); m.get(k).push(r)}} return m}}
 function agg(rows){{const viajes=rows.length,tim=sum(rows,'tim'),timr=sum(rows,'timr'),des=sum(rows,'descuento'); const buses=new Set(rows.map(r=>r.vehiculo)).size; const rutas=new Set(rows.map(r=>r.ruta)).size; return {{viajes,tim,timr,des,buses,rutas,avg:viajes?timr/viajes:0,gap:timr-tim,discRate:timr?des/timr*100:0}}}}
 function opts(id, vals, labels={{}}){{const el=$(id); vals.forEach(v=>{{const o=document.createElement('option'); o.value=v; o.textContent=labels[v]||v; el.appendChild(o)}})}}
-opts('monthFilter', DATA.filters.months, Object.fromEntries(DATA.monthly.map(m=>[m.mes,m.label]))); opts('vehicleFilter', DATA.filters.vehicles); opts('routeFilter', DATA.filters.routes);
-function filteredRows(){{const m=$('monthFilter').value,v=$('vehicleFilter').value,rt=$('routeFilter').value,q=$('searchBox').value.trim().toLowerCase(); return DATA.rows.filter(r=>(!m||r.mes===m)&&(!v||r.vehiculo===v)&&(!rt||r.ruta===rt)&&(!q||[r.fecha,r.vehiculo,r.placa,r.ruta,r.conductor,r.viaje,r.estado,r.novedad].join(' ').toLowerCase().includes(q)))}}
+opts('yearFilter', DATA.filters.years); opts('monthFilter', DATA.filters.months, Object.fromEntries(DATA.monthly.map(m=>[m.mes,m.label]))); opts('dayFilter', DATA.filters.days); opts('typeFilter', DATA.filters.day_types); opts('vehicleFilter', DATA.filters.vehicles); opts('routeFilter', DATA.filters.routes);
+function filteredRows(){{const y=$('yearFilter').value,m=$('monthFilter').value,d=$('dayFilter').value,fd=$('fromDate').value,td=$('toDate').value,tp=$('typeFilter').value,v=$('vehicleFilter').value,rt=$('routeFilter').value,q=$('searchBox').value.trim().toLowerCase(); return DATA.rows.filter(r=>(!y||r.anio===y)&&(!m||r.mes===m)&&(!d||r.dia===d)&&(!fd||r.fecha>=fd)&&(!td||r.fecha<=td)&&(!tp||r.tipo_dia===tp)&&(!v||r.vehiculo===v)&&(!rt||r.ruta===rt)&&(!q||[r.fecha,r.anio,r.mes,r.dia,r.dia_semana,r.tipo_dia,r.motivo_dia,r.vehiculo,r.placa,r.ruta,r.conductor,r.viaje,r.estado,r.novedad].join(' ').toLowerCase().includes(q)))}}
 function kpi(label,value,hint){{return `<div class="kpi"><div class="label">${{label}}</div><div class="value">${{value}}</div><div class="hint">${{hint||''}}</div></div>`}}
-function renderKPIs(rows){{const a=agg(rows); $('kpis').innerHTML=[kpi('TIM R total',nf.format(a.timr),'Timbradas reales / validaciones control'),kpi('Timbradas netas',nf.format(a.tim),'Registro neto operativo'),kpi('Descuentos',nf.format(a.des),`${{nfd.format(a.discRate)}}% sobre TIM R`),kpi('Viajes',nf.format(a.viajes),`${{nfd.format(a.avg)}} TIM R por viaje`),kpi('Buses activos',nf.format(a.buses),'Vehículos código 10* con operación'),kpi('Rutas activas',nf.format(a.rutas),'Rutas observadas en el filtro')].join('')}}
-function renderInsights(rows){{const a=agg(rows); const byDay=[...group(rows,r=>r.fecha)].map(([k,rs])=>({{fecha:k,timr:sum(rs,'timr'),viajes:rs.length}})).sort((x,y)=>y.timr-x.timr); const byBus=[...group(rows,r=>r.vehiculo+' · '+r.placa)].map(([k,rs])=>({{k,timr:sum(rs,'timr')}})).sort((x,y)=>y.timr-x.timr); const byRoute=[...group(rows,r=>r.ruta)].map(([k,rs])=>({{k,timr:sum(rs,'timr')}})).sort((x,y)=>y.timr-x.timr); const top3=byBus.slice(0,3).reduce((s,x)=>s+x.timr,0); const conc=a.timr?top3/a.timr*100:0; const list=[`<b>Mayor día:</b> ${{byDay[0]?.fecha||'Sin datos'}} con ${{nf.format(byDay[0]?.timr||0)}} TIM R.`, `<b>Buseta líder:</b> ${{byBus[0]?.k||'Sin datos'}} con ${{nf.format(byBus[0]?.timr||0)}} TIM R.`, `<b>Ruta principal:</b> ${{byRoute[0]?.k||'Sin datos'}} concentra ${{nf.format(byRoute[0]?.timr||0)}} TIM R.`, `<b>Concentración:</b> top 3 busetas aportan ${{nfd.format(conc)}}% de la TIM R visible.`, `<b>Brecha TIM R vs TIM:</b> ${{nf.format(a.gap)}} validaciones; revisar descuentos/transbordos/ajustes si crece.`, `<b>Productividad:</b> ${{nfd.format(a.avg)}} TIM R por viaje en el filtro actual.`]; $('insights').innerHTML=list.map(x=>`<div class="insight">${{x}}</div>`).join('')}}
-function drawBars(canvasId, items, labelKey, valueKey, color='#bf2026'){{const c=$(canvasId),ctx=c.getContext('2d'),dpr=window.devicePixelRatio||1; const W=c.clientWidth*dpr,H=c.clientHeight*dpr; c.width=W;c.height=H;ctx.scale(dpr,dpr); const w=c.clientWidth,h=c.clientHeight; ctx.clearRect(0,0,w,h); ctx.font='12px Arial'; ctx.fillStyle='#69727d'; const pad=42; const max=Math.max(...items.map(x=>x[valueKey]),1); const bw=Math.max(8,(w-pad*2)/items.length*.72); items.forEach((it,i)=>{{const x=pad+i*((w-pad*2)/items.length)+((w-pad*2)/items.length-bw)/2; const bh=(h-pad*2)*(it[valueKey]/max); const y=h-pad-bh; const grad=ctx.createLinearGradient(0,y,0,h-pad); grad.addColorStop(0,color); grad.addColorStop(1,'#d7b85f'); ctx.fillStyle=grad; ctx.fillRect(x,y,bw,bh); if(items.length<18){{ctx.save();ctx.translate(x+bw/2,h-12);ctx.rotate(-0.75);ctx.fillStyle='#4b5563';ctx.textAlign='right';ctx.fillText(String(it[labelKey]).slice(5)||it[labelKey],0,0);ctx.restore()}} }}); ctx.fillStyle='#20262d'; ctx.font='bold 13px Arial'; ctx.fillText('Timbradas reales (TIM R)',pad,18); }}
+function renderKPIs(rows){{const a=agg(rows); const dias=new Set(rows.map(r=>r.fecha)).size; $('kpis').innerHTML=[kpi('TIM R total',nf.format(a.timr),'Timbradas reales / validaciones control'),kpi('Timbradas netas',nf.format(a.tim),'Registro neto operativo'),kpi('Descuentos',nf.format(a.des),`${{nfd.format(a.discRate)}}% sobre TIM R`),kpi('Viajes',nf.format(a.viajes),`${{nfd.format(a.avg)}} TIM R por viaje`),kpi('Días filtrados',nf.format(dias),'Fecha Día operativa'),kpi('Clasificaciones',nf.format(new Set(rows.map(r=>r.tipo_dia)).size),'Hábil, sábado, dominical, festivo, carnaval')].join('')}}
+function renderInsights(rows){{const a=agg(rows); const byDay=[...group(rows,r=>r.fecha)].map(([k,rs])=>({{fecha:k,tipo:rs[0]?.tipo_dia||'',motivo:rs[0]?.motivo_dia||'',timr:sum(rs,'timr'),viajes:rs.length}})).sort((x,y)=>y.timr-x.timr); const byType=[...group(rows,r=>r.tipo_dia)].map(([k,rs])=>({{k,timr:sum(rs,'timr'),dias:new Set(rs.map(r=>r.fecha)).size}})).sort((x,y)=>y.timr-x.timr); const byBus=[...group(rows,r=>r.vehiculo+' · '+r.placa)].map(([k,rs])=>({{k,timr:sum(rs,'timr')}})).sort((x,y)=>y.timr-x.timr); const byRoute=[...group(rows,r=>r.ruta)].map(([k,rs])=>({{k,timr:sum(rs,'timr')}})).sort((x,y)=>y.timr-x.timr); const top3=byBus.slice(0,3).reduce((s,x)=>s+x.timr,0); const conc=a.timr?top3/a.timr*100:0; const list=[`<b>Mayor Fecha Día:</b> ${{byDay[0]?.fecha||'Sin datos'}} (${{byDay[0]?.tipo||'Sin clasificar'}}) con ${{nf.format(byDay[0]?.timr||0)}} TIM R.`, `<b>Clasificación dominante:</b> ${{byType[0]?.k||'Sin datos'}} con ${{nf.format(byType[0]?.timr||0)}} TIM R en ${{nf.format(byType[0]?.dias||0)}} días.`, `<b>Buseta líder:</b> ${{byBus[0]?.k||'Sin datos'}} con ${{nf.format(byBus[0]?.timr||0)}} TIM R.`, `<b>Ruta principal:</b> ${{byRoute[0]?.k||'Sin datos'}} concentra ${{nf.format(byRoute[0]?.timr||0)}} TIM R.`, `<b>Concentración:</b> top 3 busetas aportan ${{nfd.format(conc)}}% de la TIM R visible.`, `<b>Productividad:</b> ${{nfd.format(a.avg)}} TIM R por viaje en el filtro actual.`]; $('insights').innerHTML=list.map(x=>`<div class="insight">${{x}}</div>`).join('')}}
+function drawBars(canvasId, items, labelKey, valueKey, color='#bf2026'){{const c=$(canvasId),ctx=c.getContext('2d'),dpr=window.devicePixelRatio||1; const W=c.clientWidth*dpr,H=c.clientHeight*dpr; c.width=W;c.height=H;ctx.scale(dpr,dpr); const w=c.clientWidth,h=c.clientHeight; ctx.clearRect(0,0,w,h); ctx.font='12px Arial'; ctx.fillStyle='#69727d'; const pad=42; const max=Math.max(...items.map(x=>x[valueKey]),1); const bw=Math.max(8,(w-pad*2)/Math.max(items.length,1)*.72); items.forEach((it,i)=>{{const x=pad+i*((w-pad*2)/items.length)+((w-pad*2)/items.length-bw)/2; const bh=(h-pad*2)*(it[valueKey]/max); const y0=h-pad-bh; const grad=ctx.createLinearGradient(0,y0,0,h-pad); grad.addColorStop(0,it.color||color); grad.addColorStop(1,'#d7b85f'); ctx.fillStyle=grad; ctx.fillRect(x,y0,bw,bh); ctx.fillStyle='#20262d'; ctx.font='bold 11px Arial'; ctx.textAlign='center'; if(items.length<26)ctx.fillText(nf.format(it[valueKey]),x+bw/2,Math.max(30,y0-5)); if(items.length<18){{ctx.save();ctx.translate(x+bw/2,h-12);ctx.rotate(-0.75);ctx.fillStyle='#4b5563';ctx.textAlign='right';ctx.fillText(String(it[labelKey]).slice(5)||it[labelKey],0,0);ctx.restore()}} }}); ctx.fillStyle='#20262d'; ctx.font='bold 13px Arial'; ctx.textAlign='left'; ctx.fillText('Timbradas reales (TIM R)',pad,18); }}
 function rankHtml(items){{const max=Math.max(...items.map(x=>x.timr),1); return items.slice(0,12).map(x=>`<div class="rank-row"><div><b>${{x.label||x.k||x.key}}</b><div class="bar"><span style="width:${{Math.max(3,x.timr/max*100)}}%"></span></div><div class="small">${{nf.format(x.viajes||0)}} viajes · ${{nfd.format(x.avg||0)}} TIM R/viaje</div></div><div class="right"><b>${{nf.format(x.timr)}}</b><div class="small">TIM R</div></div></div>`).join('')}}
 function topFrom(rows,key,label){{return [...group(rows,key)].map(([k,rs])=>{{const a=agg(rs); return {{label:label(k,rs),timr:a.timr,viajes:a.viajes,avg:a.avg}}}}).sort((a,b)=>b.timr-a.timr)}}
-function renderTables(rows){{const months=[...group(rows,r=>r.mes)].map(([m,rs])=>{{const a=agg(rs); return {{m,label:(DATA.monthly.find(x=>x.mes===m)||{{label:m}}).label,...a}}}}).sort((a,b)=>a.m.localeCompare(b.m)); $('monthlyBody').innerHTML=months.map(x=>`<tr><td><b>${{x.label}}</b></td><td class="right">${{nf.format(x.viajes)}}</td><td class="right">${{nf.format(x.tim)}}</td><td class="right"><b>${{nf.format(x.timr)}}</b></td><td class="right">${{nf.format(x.des)}}</td><td class="right">${{nfd.format(x.avg)}}</td><td class="right">${{nf.format(x.buses)}}</td><td class="right">${{nf.format(x.rutas)}}</td></tr>`).join(''); $('detailBody').innerHTML=rows.slice(0,300).map(r=>`<tr><td>${{r.fecha}}</td><td><b>${{r.vehiculo}}</b></td><td>${{r.placa}}</td><td>${{r.ruta}}</td><td>${{r.conductor}}</td><td>${{r.viaje}}</td><td class="right">${{nf.format(r.tim)}}</td><td class="right"><b>${{nf.format(r.timr)}}</b></td><td class="right">${{nf.format(r.descuento)}}</td><td><span class="badge ${{r.contable?'ok':'warn'}}">${{r.estado||'Sin estado'}}</span></td></tr>`).join('')}}
+function renderCalendarTables(rows){{const order=['Hábil','Sábado','Dominical','Festivo','Carnaval','Sin fecha']; const types=order.map(t=>{{const rs=rows.filter(r=>r.tipo_dia===t); const a=agg(rs); const dias=new Set(rs.map(r=>r.fecha)).size; return {{tipo:t,dias,...a,promDia:dias?a.timr/dias:0}}}}).filter(x=>x.viajes); $('typeBody').innerHTML=types.map(x=>`<tr><td><b>${{x.tipo}}</b></td><td class="right">${{nf.format(x.dias)}}</td><td class="right">${{nf.format(x.viajes)}}</td><td class="right"><b>${{nf.format(x.timr)}}</b></td><td class="right">${{nf.format(x.tim)}}</td><td class="right">${{nf.format(x.des)}}</td><td class="right">${{nfd.format(x.promDia)}}</td><td class="right">${{nfd.format(x.avg)}}</td></tr>`).join(''); const daily=[...group(rows,r=>r.fecha)].map(([fecha,rs])=>({{fecha,dia:rs[0]?.dia_semana,tipo:rs[0]?.tipo_dia,motivo:rs[0]?.motivo_dia,timr:sum(rs,'timr')}})).filter(x=>x.tipo&&x.tipo!=='Hábil').sort((a,b)=>a.fecha.localeCompare(b.fecha)); $('specialBody').innerHTML=daily.length?daily.map(x=>`<tr><td><b>${{x.fecha}}</b></td><td>${{x.dia}}</td><td><span class="badge warn">${{x.tipo}}</span></td><td>${{x.motivo}}</td><td class="right"><b>${{nf.format(x.timr)}}</b></td></tr>`).join(''):'<tr><td colspan="5">No hay sábados, dominicales, festivos ni carnavales en el filtro actual.</td></tr>'}}
+function renderTables(rows){{const months=[...group(rows,r=>r.mes)].map(([m,rs])=>{{const a=agg(rs); return {{m,label:(DATA.monthly.find(x=>x.mes===m)||{{label:m}}).label,...a}}}}).sort((a,b)=>a.m.localeCompare(b.m)); $('monthlyBody').innerHTML=months.map(x=>`<tr><td><b>${{x.label}}</b></td><td class="right">${{nf.format(x.viajes)}}</td><td class="right">${{nf.format(x.tim)}}</td><td class="right"><b>${{nf.format(x.timr)}}</b></td><td class="right">${{nf.format(x.des)}}</td><td class="right">${{nfd.format(x.avg)}}</td><td class="right">${{nf.format(x.buses)}}</td><td class="right">${{nf.format(x.rutas)}}</td></tr>`).join(''); $('detailBody').innerHTML=rows.slice(0,300).map(r=>`<tr><td>${{r.fecha}}</td><td>${{r.dia_semana}}</td><td><span class="badge ${{r.tipo_dia==='Hábil'?'ok':'warn'}}">${{r.tipo_dia}}</span></td><td>${{r.motivo_dia}}</td><td><b>${{r.vehiculo}}</b></td><td>${{r.placa}}</td><td>${{r.ruta}}</td><td>${{r.conductor}}</td><td>${{r.viaje}}</td><td class="right">${{nf.format(r.tim)}}</td><td class="right"><b>${{nf.format(r.timr)}}</b></td><td class="right">${{nf.format(r.descuento)}}</td><td><span class="badge ${{r.contable?'ok':'warn'}}">${{r.estado||'Sin estado'}}</span></td></tr>`).join('')}}
 function renderRanks(rows){{$('rankBus').innerHTML=rankHtml(topFrom(rows,r=>r.vehiculo,r=>r)); $('rankRoute').innerHTML=rankHtml(topFrom(rows,r=>r.ruta,r=>r)); $('rankDriver').innerHTML=rankHtml(topFrom(rows,r=>r.conductor,r=>r));}}
-function update(){{const rows=filteredRows(); $('periodHero').textContent=DATA.meta.period; $('visibleCount').textContent=`${{nf.format(rows.length)}} viajes visibles de ${{nf.format(DATA.rows.length)}} consultados`; renderKPIs(rows); renderInsights(rows); renderTables(rows); renderRanks(rows); const daily=[...group(rows,r=>r.fecha)].map(([fecha,rs])=>({{fecha,timr:sum(rs,'timr')}})).sort((a,b)=>a.fecha.localeCompare(b.fecha)); drawBars('dailyChart',daily,'fecha','timr','#bf2026'); const order=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']; const wd=order.map(d=>{{const rs=rows.filter(r=>new Date(r.fecha+'T00:00:00').toLocaleDateString('es-CO',{{weekday:'long'}}).replace(/^./,c=>c.toUpperCase())===d); return {{dia:d,timr:sum(rs,'timr')}}}}).filter(x=>x.timr); drawBars('weekdayChart',wd,'dia','timr','#1769aa');}}
-function resetFilters(){{$('monthFilter').value='';$('vehicleFilter').value='';$('routeFilter').value='';$('searchBox').value='';update()}}
-['monthFilter','vehicleFilter','routeFilter'].forEach(id=>$(id).addEventListener('change',update)); $('searchBox').addEventListener('input',update); window.addEventListener('resize',()=>setTimeout(update,80)); update();
+function update(){{const rows=filteredRows(); $('periodHero').textContent=DATA.meta.period; $('visibleCount').textContent=`${{nf.format(rows.length)}} viajes visibles de ${{nf.format(DATA.rows.length)}} consultados`; renderKPIs(rows); renderInsights(rows); renderCalendarTables(rows); renderTables(rows); renderRanks(rows); const typeColors={{'Hábil':'#16734f','Sábado':'#1769aa','Dominical':'#7c1116','Festivo':'#a15c00','Carnaval':'#bf2026','Sin fecha':'#69727d'}}; const daily=[...group(rows,r=>r.fecha)].map(([fecha,rs])=>({{fecha,timr:sum(rs,'timr'),tipo:rs[0]?.tipo_dia,color:typeColors[rs[0]?.tipo_dia]||'#bf2026'}})).sort((a,b)=>a.fecha.localeCompare(b.fecha)); drawBars('dailyChart',daily,'fecha','timr','#bf2026'); const order=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']; const wd=order.map(d=>{{const rs=rows.filter(r=>r.dia_semana===d); return {{dia:d,timr:sum(rs,'timr')}}}}).filter(x=>x.timr); drawBars('weekdayChart',wd,'dia','timr','#1769aa');}}
+function resetFilters(){{['yearFilter','monthFilter','dayFilter','fromDate','toDate','typeFilter','vehicleFilter','routeFilter'].forEach(id=>$(id).value='');$('searchBox').value='';update()}}
+['yearFilter','monthFilter','dayFilter','fromDate','toDate','typeFilter','vehicleFilter','routeFilter'].forEach(id=>$(id).addEventListener('change',update)); $('searchBox').addEventListener('input',update); window.addEventListener('resize',()=>setTimeout(update,80)); update();
 </script>
 </body>
 </html>"""
