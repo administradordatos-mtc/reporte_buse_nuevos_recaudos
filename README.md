@@ -27,6 +27,20 @@ Vercel → Project Settings → Environment Variables
 
 Use Production, Preview y Development si aplica.
 
+Después de agregar o cambiar `ACCESS_KEY`, haga redeploy manual:
+
+```text
+Vercel → Project → Deployments → último deployment → ⋯ → Redeploy
+```
+
+Diagnóstico seguro:
+
+```text
+https://TU-DOMINIO.vercel.app/api/health
+```
+
+Debe responder `"access_key": "configured"`. Si responde `"missing"`, la variable se configuró en otro proyecto, otro environment, otro branch, o el deployment no fue regenerado.
+
 ## Despliegue
 
 1. Suba estos archivos al repositorio GitHub.
