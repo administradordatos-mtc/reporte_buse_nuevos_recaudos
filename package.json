@@ -1,1 +1,1 @@
-{"name":"recaudo-vehiculos-10-2026-simple-seguro","private":true,"version":"1.1.0","type":"module","scripts":{"deploy":"vercel --prod"}}
+{"name":"dashboard-timbradas-busetas-10-2026-seguro","private":true,"version":"2.0.0","type":"module","scripts":{"generate":"python3 scripts/generate_timbradas_dashboard.py","deploy":"vercel --prod"}}

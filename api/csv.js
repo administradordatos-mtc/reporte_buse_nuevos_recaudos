@@ -16,11 +16,11 @@ export default function handler(req, res) {
     res.end('No autorizado');
     return;
   }
-  const file = path.join(process.cwd(), 'private', 'recaudo_vehiculos_10_2026_mensual.csv');
+  const file = path.join(process.cwd(), 'private', 'timbradas_vehiculos_10_2026_detalle.csv');
   const csv = fs.readFileSync(file);
   res.statusCode = 200;
   res.setHeader('content-type', 'text/csv; charset=utf-8');
-  res.setHeader('content-disposition', 'attachment; filename="recaudo_vehiculos_10_2026_mensual.csv"');
+  res.setHeader('content-disposition', 'attachment; filename="timbradas_vehiculos_10_2026_detalle.csv"');
   res.setHeader('cache-control', 'private, no-store');
   res.end(csv);
 }
