@@ -100,6 +100,35 @@ def month_name(ym: str) -> str:
     return f"{names.get(m, m)} {y}"
 
 
+def normalize_date(value) -> str:
+    """Normaliza el campo operativo Fecha Día a YYYY-MM-DD.
+
+    La base actual trae fecha_viaje como fecha; si en otra fuente llega un
+    campo fecha_dia/fecha día o un timestamp, este normalizador conserva solo
+    el día calendario usado para KPIs, filtros, gráficas y CSV.
+    """
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    if "T" in text:
+        text = text.split("T", 1)[0]
+    if " " in text:
+        text = text.split(" ", 1)[0]
+    if "/" in text:
+        for fmt in ("%d/%m/%Y", "%Y/%m/%d"):
+            try:
+                return datetime.strptime(text, fmt).date().isoformat()
+            except Exception:
+                pass
+    return text[:10]
+
+
+def fecha_dia_of(r: dict) -> str:
+    return normalize_date(r.get("fecha_dia") or r.get("fecha día") or r.get("fecha_dia_operativa") or r.get("fecha_viaje"))
+
+
 def weekday_name(iso: str) -> str:
     names = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     try:
@@ -157,7 +186,8 @@ def top_items(rows: list[dict], keyfn, label_fields, limit=12):
 
 def build_data(rows: list[dict], total_count):
     for r in rows:
-        r["fecha_viaje"] = str(r.get("fecha_viaje") or "")[:10]
+        r["fecha_viaje"] = normalize_date(r.get("fecha_viaje"))
+        r["fecha_dia"] = fecha_dia_of(r)
         r["codigo_vehiculo"] = str(r.get("codigo_vehiculo") or "Sin código")
         r["placa"] = str(r.get("placa") or "")
         r["conductor_nombre"] = str(r.get("conductor_nombre") or "Sin conductor")
@@ -166,8 +196,8 @@ def build_data(rows: list[dict], total_count):
         r["tim"] = round(fnum(r.get("timbradas")), 1)
         r["timr"] = round(fnum(r.get("timbradas_real")), 1)
         r["descuento_num"] = round(fnum(r.get("descuento")), 1)
-        r["mes"] = r["fecha_viaje"][:7] if len(r["fecha_viaje"]) >= 7 else "Sin fecha"
-        r["dia_semana"] = weekday_name(r["fecha_viaje"])
+        r["mes"] = r["fecha_dia"][:7] if len(r["fecha_dia"]) >= 7 else "Sin fecha"
+        r["dia_semana"] = weekday_name(r["fecha_dia"])
 
     overall = bucket()
     by_day = defaultdict(bucket)
@@ -175,7 +205,7 @@ def build_data(rows: list[dict], total_count):
     by_weekday = defaultdict(bucket)
     for r in rows:
         add(overall, r)
-        add(by_day[r["fecha_viaje"]], r)
+        add(by_day[r["fecha_dia"]], r)
         add(by_month[r["mes"]], r)
         add(by_weekday[r["dia_semana"]], r)
 
@@ -215,14 +245,14 @@ def build_data(rows: list[dict], total_count):
     ]
 
     compact_rows = [{
-        "fecha": r["fecha_viaje"], "mes": r["mes"], "vehiculo": r["codigo_vehiculo"], "placa": r["placa"],
+        "fecha": r["fecha_dia"], "fecha_dia": r["fecha_dia"], "fecha_viaje": r["fecha_viaje"], "mes": r["mes"], "vehiculo": r["codigo_vehiculo"], "placa": r["placa"],
         "ruta": r["ruta"], "conductor": r["conductor_nombre"], "viaje": r.get("viaje") or "", "tim": r["tim"],
         "timr": r["timr"], "descuento": r["descuento_num"], "estado": r.get("estado") or "", "novedad": r.get("novedad") or "",
         "extemporaneo": bool(r.get("is_extemporaneo")), "contable": r.get("is_viaje_contable") is not False,
     } for r in rows]
 
     return {
-        "meta": {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "source": "Supabase / viajes_recaudados", "filter": "codigo_vehiculo like 10* · fecha_viaje 2026", "rows": len(rows), "total_count_header": total_count, "period": f"{daily[0]['fecha']} a {daily[-1]['fecha']}" if daily else "Sin registros"},
+        "meta": {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "source": "Supabase / viajes_recaudados", "filter": "codigo_vehiculo like 10* · Fecha Día 2026", "date_field": "fecha_dia derivada de fecha_viaje", "rows": len(rows), "total_count_header": total_count, "period": f"{daily[0]['fecha']} a {daily[-1]['fecha']}" if daily else "Sin registros"},
         "kpis": {"timr": round(overall["timr"], 1), "tim": round(overall["tim"], 1), "descuento": round(overall["descuento"], 1), "tim_gap": round(tim_gap, 1), "viajes": overall["viajes"], "buses": len(overall["vehiculos"]), "rutas": len(overall["rutas"]), "avg_trip": round(avg_trip, 1), "discount_rate": round(discount_rate, 2), "best_day": best_day, "best_month": best_month},
         "monthly": monthly, "daily": daily, "weekday": weekday, "top_bus": top_bus, "top_route": top_route, "top_driver": top_driver, "insights": insights, "rows": compact_rows,
         "filters": {"months": sorted(set(r["mes"] for r in rows)), "vehicles": sorted(set(r["codigo_vehiculo"] for r in rows)), "routes": sorted(set(r["ruta"] for r in rows))},
@@ -232,8 +262,8 @@ def build_data(rows: list[dict], total_count):
 def write_csv(data: dict):
     path = OUT_PRIVATE / "timbradas_vehiculos_10_2026_detalle.csv"
     with path.open("w", encoding="utf-8", newline="") as f:
-        fields = ["fecha", "mes", "vehiculo", "placa", "ruta", "conductor", "viaje", "tim", "timr", "descuento", "estado", "novedad", "extemporaneo", "contable"]
-        w = csv.DictWriter(f, fieldnames=fields)
+        fields = ["fecha_dia", "fecha_viaje", "mes", "vehiculo", "placa", "ruta", "conductor", "viaje", "tim", "timr", "descuento", "estado", "novedad", "extemporaneo", "contable"]
+        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
         w.writerows(data["rows"])
     return path
@@ -277,7 +307,7 @@ main{{max-width:1480px;margin:-58px auto 70px;padding:0 clamp(12px,3vw,34px)}} .
       <h1>Busetas código 10*: validación de pasajeros y eficiencia operativa</h1>
       <div class="subtitle">Experiencia interactiva enfocada en TIM R, timbradas netas, descuentos, viajes, buses activos, rutas e insights accionables.</div>
     </div>
-    <div class="hero-panel"><strong>Fuente:</strong> Supabase / viajes_recaudados<br><strong>Filtro:</strong> código vehículo 10* · fecha viaje 2026<br><strong>Periodo:</strong> <span id="periodHero"></span><br><strong>Generado:</strong> {html.escape(data['meta']['generated_at'])}</div>
+    <div class="hero-panel"><strong>Fuente:</strong> Supabase / viajes_recaudados<br><strong>Filtro:</strong> código vehículo 10* · Fecha Día 2026<br><strong>Campo fecha:</strong> Fecha Día<br><strong>Periodo:</strong> <span id="periodHero"></span><br><strong>Generado:</strong> {html.escape(data['meta']['generated_at'])}</div>
   </div>
 </header>
 <main>
@@ -296,7 +326,7 @@ main{{max-width:1480px;margin:-58px auto 70px;padding:0 clamp(12px,3vw,34px)}} .
   </section>
 
   <section class="grid-2">
-    <div class="card"><div class="section-title"><div><h2>Evolución diaria</h2><div class="small">Timbradas reales (TIM R) por fecha de viaje.</div></div></div><canvas id="dailyChart"></canvas><div class="legend"><span><i class="dot"></i> TIM R</span><span><i class="dot gold"></i> Promedio móvil visual</span></div></div>
+    <div class="card"><div class="section-title"><div><h2>Evolución diaria</h2><div class="small">Timbradas reales (TIM R) por Fecha Día operativa.</div></div></div><canvas id="dailyChart"></canvas><div class="legend"><span><i class="dot"></i> TIM R</span><span><i class="dot gold"></i> Promedio móvil visual</span></div></div>
     <div class="card"><div class="section-title"><div><h2>Comportamiento por día</h2><div class="small">TIM R y promedio por viaje según día de semana.</div></div></div><canvas id="weekdayChart"></canvas><div class="legend"><span><i class="dot blue"></i> TIM R</span></div></div>
   </section>
 
@@ -313,7 +343,7 @@ main{{max-width:1480px;margin:-58px auto 70px;padding:0 clamp(12px,3vw,34px)}} .
 
   <section class="card">
     <div class="section-title"><div><h2>Detalle de viajes</h2><div class="small">Tabla interactiva con los primeros 300 registros visibles según filtros.</div></div></div>
-    <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Buseta</th><th>Placa</th><th>Ruta</th><th>Conductor</th><th>Viaje</th><th class="right">TIM</th><th class="right">TIM R</th><th class="right">Desc.</th><th>Estado</th></tr></thead><tbody id="detailBody"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Fecha Día</th><th>Buseta</th><th>Placa</th><th>Ruta</th><th>Conductor</th><th>Viaje</th><th class="right">TIM</th><th class="right">TIM R</th><th class="right">Desc.</th><th>Estado</th></tr></thead><tbody id="detailBody"></tbody></table></div>
   </section>
 </main>
 <footer>La Carolina · Transporte con Corazón · Dashboard protegido en Vercel · Sin valores monetarios</footer>
